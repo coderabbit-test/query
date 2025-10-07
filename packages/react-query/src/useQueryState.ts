@@ -43,7 +43,7 @@ export function useQueryState<TResult = QueryState>(
 
   React.useEffect(() => {
     optionsRef.current = options
-  })
+  }, [options])
 
   return React.useSyncExternalStore(
     React.useCallback(
