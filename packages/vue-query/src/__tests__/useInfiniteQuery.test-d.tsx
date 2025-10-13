@@ -1,7 +1,8 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { computed, reactive } from 'vue-demi'
+import { sleep } from '@tanstack/query-test-utils'
 import { useInfiniteQuery } from '../useInfiniteQuery'
-import { simpleFetcher } from './test-utils'
+import { infiniteQueryOptions } from '../infiniteQueryOptions'
 import type { InfiniteData } from '@tanstack/query-core'
 
 describe('Discriminated union return type', () => {
@@ -9,7 +10,7 @@ describe('Discriminated union return type', () => {
     const query = reactive(
       useInfiniteQuery({
         queryKey: ['infiniteQuery'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(0).then(() => 'Some data'),
         getNextPageParam: () => undefined,
         initialPageParam: 0,
       }),
@@ -25,7 +26,7 @@ describe('Discriminated union return type', () => {
     const query = reactive(
       useInfiniteQuery({
         queryKey: ['infiniteQuery'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(0).then(() => 'Some data'),
         getNextPageParam: () => undefined,
         initialPageParam: 0,
       }),
@@ -41,7 +42,7 @@ describe('Discriminated union return type', () => {
     const query = reactive(
       useInfiniteQuery({
         queryKey: ['infiniteQuery'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(0).then(() => 'Some data'),
         getNextPageParam: () => undefined,
         initialPageParam: 0,
       }),
@@ -56,7 +57,7 @@ describe('Discriminated union return type', () => {
     const query = reactive(
       useInfiniteQuery({
         queryKey: ['infiniteQuery'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(0).then(() => 'Some data'),
         getNextPageParam: () => undefined,
         initialPageParam: 0,
       }),
@@ -71,7 +72,7 @@ describe('Discriminated union return type', () => {
     const query = reactive(
       useInfiniteQuery({
         queryKey: ['infiniteQuery'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(0).then(() => 'Some data'),
         getNextPageParam: () => undefined,
         initialPageParam: 0,
       }),
@@ -85,10 +86,41 @@ describe('Discriminated union return type', () => {
   it('should accept computed options', () => {
     const options = computed(() => ({
       queryKey: ['infiniteQuery'],
-      queryFn: simpleFetcher,
+      queryFn: () => sleep(0).then(() => 'Some data'),
       getNextPageParam: () => undefined,
       initialPageParam: 0,
     }))
+    const query = reactive(useInfiniteQuery(options))
+
+    if (query.isSuccess) {
+      expectTypeOf(query.data).toEqualTypeOf<InfiniteData<string, unknown>>()
+    }
+  })
+
+  it('should accept computed options using infiniteQueryOptions', () => {
+    const options = computed(() =>
+      infiniteQueryOptions({
+        queryKey: ['infiniteQuery'],
+        queryFn: () => sleep(0).then(() => 'Some data'),
+        getNextPageParam: () => undefined,
+        initialPageParam: 0,
+      }),
+    )
+    const query = reactive(useInfiniteQuery(options))
+
+    if (query.isSuccess) {
+      expectTypeOf(query.data).toEqualTypeOf<InfiniteData<string, unknown>>()
+    }
+  })
+
+  it('should accept plain options using infiniteQueryOptions', () => {
+    const options = () =>
+      infiniteQueryOptions({
+        queryKey: ['infiniteQuery'],
+        queryFn: () => sleep(0).then(() => 'Some data'),
+        getNextPageParam: () => undefined,
+        initialPageParam: 0,
+      })
     const query = reactive(useInfiniteQuery(options))
 
     if (query.isSuccess) {

@@ -19,10 +19,6 @@ comment:
 
 component_management:
   individual_components:
-    - component_id: angular-query-devtools-experimental
-      name: '@tanstack/angular-query-devtools-experimental'
-      paths:
-        - packages/angular-query-devtools-experimental/**
     - component_id: angular-query-experimental
       name: '@tanstack/angular-query-experimental'
       paths:
@@ -59,6 +55,10 @@ component_management:
       name: '@tanstack/query-sync-storage-persister'
       paths:
         - packages/query-sync-storage-persister/**
+    - component_id: query-test-utils
+      name: '@tanstack/query-test-utils'
+      paths:
+        - packages/query-test-utils/**
     - component_id: react-query
       name: '@tanstack/react-query'
       paths:

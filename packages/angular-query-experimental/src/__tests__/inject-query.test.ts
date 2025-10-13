@@ -1,28 +1,33 @@
 import {
+  ApplicationRef,
   Component,
   Injector,
   computed,
   effect,
   input,
-  provideExperimentalZonelessChangeDetection,
+  provideZonelessChangeDetection,
   signal,
 } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
-import { afterEach, describe, expect, vi } from 'vitest'
-import { QueryCache, QueryClient, injectQuery, provideTanStackQuery } from '..'
+import { HttpClient, provideHttpClient } from '@angular/common/http'
 import {
-  delayedFetcher,
-  getSimpleFetcherWithReturnData,
-  queryKey,
-  rejectFetcher,
-  setSignalInputs,
-  simpleFetcher,
-} from './test-utils'
+  HttpTestingController,
+  provideHttpClientTesting,
+} from '@angular/common/http/testing'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from 'vitest'
+import { queryKey, sleep } from '@tanstack/query-test-utils'
+import { lastValueFrom } from 'rxjs'
+import { QueryCache, QueryClient, injectQuery, provideTanStackQuery } from '..'
+import { setSignalInputs } from './test-utils'
 import type { CreateQueryOptions, OmitKeyof, QueryFunction } from '..'
-
-const QUERY_DURATION = 100
-
-const resolveQueries = () => vi.advanceTimersByTimeAsync(QUERY_DURATION)
 
 describe('injectQuery', () => {
   let queryCache: QueryCache
@@ -33,7 +38,7 @@ describe('injectQuery', () => {
     queryClient = new QueryClient({ queryCache })
     TestBed.configureTestingModule({
       providers: [
-        provideExperimentalZonelessChangeDetection(),
+        provideZonelessChangeDetection(),
         provideTanStackQuery(queryClient),
       ],
     })
@@ -232,7 +237,7 @@ describe('injectQuery', () => {
         ...options,
       }))
     const fromWrappedQuery = TestBed.runInInjectionContext(() =>
-      createWrappedQuery([''], async () => '1'),
+      createWrappedQuery([''], () => Promise.resolve('1')),
     )
     expectTypeOf(fromWrappedQuery.data()).toEqualTypeOf<string | undefined>()
 
@@ -252,7 +257,7 @@ describe('injectQuery', () => {
       >,
     ) => injectQuery(() => ({ queryKey: qk, queryFn: fetcher, ...options }))
     const fromWrappedFuncStyleQuery = TestBed.runInInjectionContext(() =>
-      createWrappedFuncStyleQuery([''], async () => true),
+      createWrappedFuncStyleQuery([''], () => Promise.resolve(true)),
     )
     expectTypeOf(fromWrappedFuncStyleQuery.data()).toEqualTypeOf<
       boolean | undefined
@@ -263,7 +268,7 @@ describe('injectQuery', () => {
     const query = TestBed.runInInjectionContext(() => {
       return injectQuery(() => ({
         queryKey: ['key1'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(10).then(() => 'Some data'),
       }))
     })
 
@@ -278,12 +283,11 @@ describe('injectQuery', () => {
     const query = TestBed.runInInjectionContext(() => {
       return injectQuery(() => ({
         queryKey: ['key2'],
-        queryFn: getSimpleFetcherWithReturnData('result2'),
+        queryFn: () => sleep(10).then(() => 'result2'),
       }))
     })
 
-    await resolveQueries()
-
+    await vi.advanceTimersByTimeAsync(11)
     expect(query.status()).toBe('success')
     expect(query.data()).toBe('result2')
     expect(query.isPending()).toBe(false)
@@ -297,12 +301,12 @@ describe('injectQuery', () => {
       return injectQuery(() => ({
         retry: false,
         queryKey: ['key3'],
-        queryFn: rejectFetcher,
+        queryFn: () =>
+          sleep(10).then(() => Promise.reject(new Error('Some error'))),
       }))
     })
 
-    await resolveQueries()
-
+    await vi.advanceTimersByTimeAsync(11)
     expect(query.status()).toBe('error')
     expect(query.data()).toBe(undefined)
     expect(query.error()).toMatchObject({ message: 'Some error' })
@@ -315,7 +319,7 @@ describe('injectQuery', () => {
 
   test('should update query on options contained signal change', async () => {
     const key = signal(['key6', 'key7'])
-    const spy = vi.fn(simpleFetcher)
+    const spy = vi.fn(() => sleep(10).then(() => 'Some data'))
 
     const query = TestBed.runInInjectionContext(() => {
       return injectQuery(() => ({
@@ -324,14 +328,14 @@ describe('injectQuery', () => {
       }))
     })
 
-    await resolveQueries()
-
+    await vi.advanceTimersByTimeAsync(0)
     expect(spy).toHaveBeenCalledTimes(1)
 
+    await vi.advanceTimersByTimeAsync(11)
     expect(query.status()).toBe('success')
 
     key.set(['key8'])
-    TestBed.flushEffects()
+    TestBed.tick()
 
     expect(spy).toHaveBeenCalledTimes(2)
     // should call queryFn with context containing the new queryKey
@@ -344,7 +348,7 @@ describe('injectQuery', () => {
   })
 
   test('should only run query once enabled signal is set to true', async () => {
-    const spy = vi.fn(simpleFetcher)
+    const spy = vi.fn(() => sleep(10).then(() => 'Some data'))
     const enabled = signal(false)
 
     const query = TestBed.runInInjectionContext(() => {
@@ -359,7 +363,8 @@ describe('injectQuery', () => {
     expect(query.status()).toBe('pending')
 
     enabled.set(true)
-    await resolveQueries()
+
+    await vi.advanceTimersByTimeAsync(11)
     expect(spy).toHaveBeenCalledTimes(1)
     expect(query.status()).toBe('success')
   })
@@ -368,11 +373,13 @@ describe('injectQuery', () => {
     const query1 = TestBed.runInInjectionContext(() => {
       return injectQuery(() => ({
         queryKey: ['dependant1'],
-        queryFn: simpleFetcher,
+        queryFn: () => sleep(10).then(() => 'Some data'),
       }))
     })
 
-    const dependentQueryFn = vi.fn().mockImplementation(delayedFetcher(1000))
+    const dependentQueryFn = vi
+      .fn()
+      .mockImplementation(() => sleep(1000).then(() => 'Some data'))
 
     const query2 = TestBed.runInInjectionContext(() => {
       return injectQuery(
@@ -388,12 +395,12 @@ describe('injectQuery', () => {
     expect(query2.fetchStatus()).toStrictEqual('idle')
     expect(dependentQueryFn).not.toHaveBeenCalled()
 
-    await resolveQueries()
+    await vi.advanceTimersByTimeAsync(11)
 
     expect(query1.data()).toStrictEqual('Some data')
     expect(query2.fetchStatus()).toStrictEqual('fetching')
 
-    await vi.runAllTimersAsync()
+    await vi.advanceTimersByTimeAsync(1002)
 
     expect(query2.fetchStatus()).toStrictEqual('idle')
     expect(query2.status()).toStrictEqual('success')
@@ -404,7 +411,7 @@ describe('injectQuery', () => {
   })
 
   test('should use the current value for the queryKey when refetch is called', async () => {
-    const fetchFn = vi.fn(simpleFetcher)
+    const fetchFn = vi.fn(() => sleep(10).then(() => 'Some data'))
     const keySignal = signal('key11')
 
     const query = TestBed.runInInjectionContext(() => {
@@ -426,11 +433,9 @@ describe('injectQuery', () => {
       )
     })
 
-    await resolveQueries()
+    await vi.advanceTimersByTimeAsync(11)
 
     keySignal.set('key12')
-
-    TestBed.flushEffects()
 
     query.refetch().then(() => {
       expect(fetchFn).toHaveBeenCalledTimes(2)
@@ -441,7 +446,7 @@ describe('injectQuery', () => {
       )
     })
 
-    await resolveQueries()
+    await vi.advanceTimersByTimeAsync(11)
   })
 
   describe('throwOnError', () => {
@@ -450,13 +455,14 @@ describe('injectQuery', () => {
       TestBed.runInInjectionContext(() => {
         return injectQuery(() => ({
           queryKey: ['key12'],
-          queryFn: rejectFetcher,
+          queryFn: () =>
+            sleep(10).then(() => Promise.reject(new Error('Some error'))),
+          retry: false,
           throwOnError: boundaryFn,
         }))
       })
 
-      await vi.runAllTimersAsync()
-
+      await vi.advanceTimersByTimeAsync(11)
       expect(boundaryFn).toHaveBeenCalledTimes(1)
       expect(boundaryFn).toHaveBeenCalledWith(
         Error('Some error'),
@@ -470,7 +476,8 @@ describe('injectQuery', () => {
       TestBed.runInInjectionContext(() => {
         return injectQuery(() => ({
           queryKey: ['key13'],
-          queryFn: rejectFetcher,
+          queryFn: () =>
+            sleep(0).then(() => Promise.reject(new Error('Some error'))),
           throwOnError: true,
         }))
       })
@@ -482,7 +489,8 @@ describe('injectQuery', () => {
       TestBed.runInInjectionContext(() => {
         return injectQuery(() => ({
           queryKey: ['key14'],
-          queryFn: rejectFetcher,
+          queryFn: () =>
+            sleep(0).then(() => Promise.reject(new Error('Some error'))),
           throwOnError: () => true,
         }))
       })
@@ -496,13 +504,14 @@ describe('injectQuery', () => {
       return injectQuery(() => ({
         retry: false,
         queryKey: ['key15'],
-        queryFn: rejectFetcher,
+        queryFn: () =>
+          sleep(10).then(() => Promise.reject(new Error('Some error'))),
       }))
     })
 
     expect(query.status()).toBe('pending')
 
-    await resolveQueries()
+    await vi.advanceTimersByTimeAsync(11)
 
     expect(query.status()).toBe('error')
   })
@@ -511,7 +520,6 @@ describe('injectQuery', () => {
     @Component({
       selector: 'app-fake',
       template: `{{ query.data() }}`,
-      standalone: true,
     })
     class FakeComponent {
       name = input.required<string>()
@@ -528,7 +536,7 @@ describe('injectQuery', () => {
     })
 
     fixture.detectChanges()
-    await resolveQueries()
+    await vi.advanceTimersByTimeAsync(0)
 
     expect(fixture.componentInstance.query.data()).toEqual(
       'signal-input-required-test',
@@ -540,7 +548,7 @@ describe('injectQuery', () => {
       expect(() => {
         injectQuery(() => ({
           queryKey: ['injectionContextError'],
-          queryFn: simpleFetcher,
+          queryFn: () => sleep(0).then(() => 'Some data'),
         }))
       }).toThrowError(/NG0203(.*?)injectQuery/)
     })
@@ -549,7 +557,7 @@ describe('injectQuery', () => {
       const query = injectQuery(
         () => ({
           queryKey: ['manualInjector'],
-          queryFn: simpleFetcher,
+          queryFn: () => sleep(0).then(() => 'Some data'),
         }),
         {
           injector: TestBed.inject(Injector),
@@ -557,6 +565,205 @@ describe('injectQuery', () => {
       )
 
       expect(query.status()).toBe('pending')
+    })
+
+    test('should complete queries before whenStable() resolves', async () => {
+      const app = TestBed.inject(ApplicationRef)
+
+      const query = TestBed.runInInjectionContext(() =>
+        injectQuery(() => ({
+          queryKey: ['pendingTasksTest'],
+          queryFn: async () => {
+            await sleep(50)
+            return 'test data'
+          },
+        })),
+      )
+
+      expect(query.status()).toBe('pending')
+      expect(query.data()).toBeUndefined()
+
+      const stablePromise = app.whenStable()
+      await vi.advanceTimersByTimeAsync(60)
+      await stablePromise
+
+      expect(query.status()).toBe('success')
+      expect(query.data()).toBe('test data')
+    })
+
+    test('should complete HttpClient-based queries before whenStable() resolves', async () => {
+      TestBed.resetTestingModule()
+      TestBed.configureTestingModule({
+        providers: [
+          provideZonelessChangeDetection(),
+          provideTanStackQuery(queryClient),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+        ],
+      })
+
+      const app = TestBed.inject(ApplicationRef)
+      const httpClient = TestBed.inject(HttpClient)
+      const httpTestingController = TestBed.inject(HttpTestingController)
+
+      // Create a query using HttpClient
+      const query = TestBed.runInInjectionContext(() =>
+        injectQuery(() => ({
+          queryKey: ['httpClientTest'],
+          queryFn: () =>
+            lastValueFrom(httpClient.get<{ message: string }>('/api/test')),
+        })),
+      )
+
+      // Schedule the HTTP response
+      setTimeout(() => {
+        const req = httpTestingController.expectOne('/api/test')
+        req.flush({ message: 'http test data' })
+      }, 10)
+
+      // Initial state
+      expect(query.status()).toBe('pending')
+
+      // Advance timers and wait for Angular to be "stable"
+      const stablePromise = app.whenStable()
+      await vi.advanceTimersByTimeAsync(20)
+      await stablePromise
+
+      // Query should be complete after whenStable() thanks to PendingTasks integration
+      expect(query.status()).toBe('success')
+      expect(query.data()).toEqual({ message: 'http test data' })
+
+      httpTestingController.verify()
+    })
+
+    test('should handle synchronous queryFn with staleTime', async () => {
+      TestBed.resetTestingModule()
+      TestBed.configureTestingModule({
+        providers: [
+          provideZonelessChangeDetection(),
+          provideTanStackQuery(queryClient),
+        ],
+      })
+
+      const app = TestBed.inject(ApplicationRef)
+      let callCount = 0
+
+      const query = TestBed.runInInjectionContext(() =>
+        injectQuery(() => ({
+          queryKey: ['sync-stale'],
+          staleTime: 1000,
+          queryFn: () => {
+            callCount++
+            return `sync-data-${callCount}`
+          },
+        })),
+      )
+
+      // Synchronize pending effects
+      TestBed.tick()
+
+      const stablePromise = app.whenStable()
+      await stablePromise
+
+      expect(query.status()).toBe('success')
+      expect(query.data()).toBe('sync-data-1')
+      expect(callCount).toBe(1)
+
+      await query.refetch()
+      await Promise.resolve()
+      await vi.runAllTimersAsync()
+      await app.whenStable()
+
+      expect(query.status()).toBe('success')
+      expect(query.data()).toBe('sync-data-2')
+      expect(callCount).toBe(2)
+    })
+
+    test('should handle enabled/disabled transitions with synchronous queryFn', async () => {
+      TestBed.resetTestingModule()
+      TestBed.configureTestingModule({
+        providers: [
+          provideZonelessChangeDetection(),
+          provideTanStackQuery(queryClient),
+        ],
+      })
+
+      const app = TestBed.inject(ApplicationRef)
+      const enabledSignal = signal(false)
+      let callCount = 0
+
+      const query = TestBed.runInInjectionContext(() =>
+        injectQuery(() => ({
+          queryKey: ['sync-enabled'],
+          enabled: enabledSignal(),
+          queryFn: () => {
+            callCount++
+            return `sync-data-${callCount}`
+          },
+        })),
+      )
+
+      // Initially disabled
+      TestBed.tick()
+      await app.whenStable()
+      expect(query.status()).toBe('pending')
+      expect(query.data()).toBeUndefined()
+      expect(callCount).toBe(0)
+
+      // Enable the query
+      enabledSignal.set(true)
+      TestBed.tick()
+
+      await app.whenStable()
+      expect(query.status()).toBe('success')
+      expect(query.data()).toBe('sync-data-1')
+      expect(callCount).toBe(1)
+    })
+
+    test('should handle query invalidation with synchronous data', async () => {
+      TestBed.resetTestingModule()
+      TestBed.configureTestingModule({
+        providers: [
+          provideZonelessChangeDetection(),
+          provideTanStackQuery(queryClient),
+        ],
+      })
+
+      const app = TestBed.inject(ApplicationRef)
+      const testKey = ['sync-invalidate']
+      let callCount = 0
+
+      const query = TestBed.runInInjectionContext(() =>
+        injectQuery(() => ({
+          queryKey: testKey,
+          queryFn: () => {
+            callCount++
+            return `sync-data-${callCount}`
+          },
+        })),
+      )
+
+      // Synchronize pending effects
+      TestBed.tick()
+
+      await app.whenStable()
+      expect(query.status()).toBe('success')
+      expect(query.data()).toBe('sync-data-1')
+      expect(callCount).toBe(1)
+
+      // Invalidate the query
+      queryClient.invalidateQueries({ queryKey: testKey })
+      TestBed.tick()
+
+      // Wait for the invalidation to trigger a refetch
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(10)
+      TestBed.tick()
+
+      await app.whenStable()
+      expect(query.status()).toBe('success')
+      expect(query.data()).toBe('sync-data-2')
+      expect(callCount).toBe(2)
     })
   })
 })

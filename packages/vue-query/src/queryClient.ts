@@ -44,7 +44,7 @@ export class QueryClient extends QC {
     super(vueQueryConfig)
   }
 
-  isRestoring: Ref<boolean> = ref(false)
+  isRestoring?: Ref<boolean> = ref(false)
 
   isFetching(filters: MaybeRefDeep<QueryFilters> = {}): number {
     return super.isFetching(cloneDeepUnref(filters))
@@ -114,17 +114,17 @@ export class QueryClient extends QC {
       NoInfer<TInferredQueryFnData> | undefined
     >,
     options?: MaybeRefDeep<SetDataOptions>,
-  ): TInferredQueryFnData | undefined
+  ): NoInfer<TInferredQueryFnData> | undefined
   setQueryData<TQueryFnData, TData = NoUnknown<TQueryFnData>>(
     queryKey: MaybeRefDeep<QueryKey>,
     updater: Updater<NoInfer<TData> | undefined, NoInfer<TData> | undefined>,
     options?: MaybeRefDeep<SetDataOptions>,
-  ): TData | undefined
+  ): NoInfer<TData> | undefined
   setQueryData<TData>(
     queryKey: MaybeRefDeep<QueryKey>,
     updater: Updater<TData | undefined, TData | undefined>,
     options: MaybeRefDeep<SetDataOptions> = {},
-  ): TData | undefined {
+  ): NoInfer<TData> | undefined {
     return super.setQueryData(
       cloneDeepUnref(queryKey),
       updater,
@@ -456,11 +456,11 @@ export class QueryClient extends QC {
     TData = unknown,
     TError = DefaultError,
     TVariables = void,
-    TContext = unknown,
+    TOnMutateResult = unknown,
   >(
     mutationKey: MaybeRefDeep<MutationKey>,
     options: MaybeRefDeep<
-      MutationObserverOptions<TData, TError, TVariables, TContext>
+      MutationObserverOptions<TData, TError, TVariables, TOnMutateResult>
     >,
   ): void {
     super.setMutationDefaults(

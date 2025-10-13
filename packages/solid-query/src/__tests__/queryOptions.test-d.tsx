@@ -1,16 +1,23 @@
-import { describe, expectTypeOf, it } from 'vitest'
-import { QueryClient, dataTagSymbol, skipToken } from '@tanstack/query-core'
+import { assertType, describe, expectTypeOf, it } from 'vitest'
+import {
+  QueryClient,
+  dataTagErrorSymbol,
+  dataTagSymbol,
+  skipToken,
+} from '@tanstack/query-core'
 import { useQuery } from '../useQuery'
 import { queryOptions } from '../queryOptions'
 
 describe('queryOptions', () => {
   it('should not allow excess properties', () => {
-    queryOptions({
-      queryKey: ['key'],
-      queryFn: () => Promise.resolve(5),
-      // @ts-expect-error this is a good error, because stallTime does not exist!
-      stallTime: 1000,
-    })
+    assertType(
+      queryOptions({
+        queryKey: ['key'],
+        queryFn: () => Promise.resolve(5),
+        // @ts-expect-error this is a good error, because stallTime does not exist!
+        stallTime: 1000,
+      }),
+    )
   })
   it('should infer types for callbacks', () => {
     queryOptions({
@@ -71,6 +78,14 @@ describe('queryOptions', () => {
     })
 
     expectTypeOf(queryKey[dataTagSymbol]).toEqualTypeOf<number>()
+  })
+  it('should tag the queryKey with the default error type', () => {
+    const { queryKey } = queryOptions({
+      queryKey: ['key'],
+      queryFn: () => Promise.resolve(1),
+    })
+
+    expectTypeOf(queryKey[dataTagErrorSymbol]).toEqualTypeOf<Error>()
   })
   it('should return the proper type when passed to getQueryData', () => {
     const { queryKey } = queryOptions({

@@ -2,14 +2,16 @@ import {
   computed,
   getCurrentScope,
   onScopeDispose,
+  reactive,
   readonly,
   shallowReactive,
   shallowReadonly,
   toRefs,
   watch,
 } from 'vue-demi'
+import { shouldThrowError } from '@tanstack/query-core'
 import { useQueryClient } from './useQueryClient'
-import { cloneDeepUnref, shouldThrowError, updateState } from './utils'
+import { cloneDeepUnref, updateState } from './utils'
 import type { Ref } from 'vue-demi'
 import type {
   DefaultedQueryObserverOptions,
@@ -20,6 +22,7 @@ import type {
 import type { QueryClient } from './queryClient'
 import type { UseQueryOptions } from './useQuery'
 import type { UseInfiniteQueryOptions } from './useInfiniteQuery'
+import type { MaybeRefOrGetter } from './types'
 
 export type UseBaseQueryReturnType<
   TData,
@@ -45,14 +48,7 @@ type UseQueryOptionsGeneric<
   TPageParam = unknown,
 > =
   | UseQueryOptions<TQueryFnData, TError, TData, TQueryData, TQueryKey>
-  | UseInfiniteQueryOptions<
-      TQueryFnData,
-      TError,
-      TData,
-      TQueryData,
-      TQueryKey,
-      TPageParam
-    >
+  | UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
 
 export function useBaseQuery<
   TQueryFnData,
@@ -63,13 +59,15 @@ export function useBaseQuery<
   TPageParam,
 >(
   Observer: typeof QueryObserver,
-  options: UseQueryOptionsGeneric<
-    TQueryFnData,
-    TError,
-    TData,
-    TQueryData,
-    TQueryKey,
-    TPageParam
+  options: MaybeRefOrGetter<
+    UseQueryOptionsGeneric<
+      TQueryFnData,
+      TError,
+      TData,
+      TQueryData,
+      TQueryKey,
+      TPageParam
+    >
   >,
   queryClient?: QueryClient,
 ): UseBaseQueryReturnType<TData, TError> {
@@ -98,7 +96,7 @@ export function useBaseQuery<
       TQueryKey
     > = client.defaultQueryOptions(clonedOptions)
 
-    defaulted._optimisticResults = client.isRestoring.value
+    defaulted._optimisticResults = client.isRestoring?.value
       ? 'isRestoring'
       : 'optimistic'
 
@@ -106,24 +104,29 @@ export function useBaseQuery<
   })
 
   const observer = new Observer(client, defaultedOptions.value)
-  const state = shallowReactive(observer.getCurrentResult())
+  // @ts-expect-error
+  const state = defaultedOptions.value.shallow
+    ? shallowReactive(observer.getCurrentResult())
+    : reactive(observer.getCurrentResult())
 
   let unsubscribe = () => {
     // noop
   }
 
-  watch(
-    client.isRestoring,
-    (isRestoring) => {
-      if (!isRestoring) {
-        unsubscribe()
-        unsubscribe = observer.subscribe((result) => {
-          updateState(state, result)
-        })
-      }
-    },
-    { immediate: true },
-  )
+  if (client.isRestoring) {
+    watch(
+      client.isRestoring,
+      (isRestoring) => {
+        if (!isRestoring) {
+          unsubscribe()
+          unsubscribe = observer.subscribe((result) => {
+            updateState(state, result)
+          })
+        }
+      },
+      { immediate: true },
+    )
+  }
 
   const updater = () => {
     observer.setOptions(defaultedOptions.value)
@@ -202,13 +205,10 @@ export function useBaseQuery<
     },
   )
 
-  const readonlyState =
-    process.env.NODE_ENV === 'production'
-      ? state
-      : // @ts-expect-error
-        defaultedOptions.value.shallow
-        ? shallowReadonly(state)
-        : readonly(state)
+  // @ts-expect-error
+  const readonlyState = defaultedOptions.value.shallow
+    ? shallowReadonly(state)
+    : readonly(state)
 
   const object: any = toRefs(readonlyState)
   for (const key in state) {
