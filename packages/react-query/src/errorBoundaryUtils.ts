@@ -18,8 +18,8 @@ export const ensurePreventErrorBoundaryRetry = <
   TQueryKey extends QueryKey,
 >(
   options: DefaultedQueryObserverOptions<
-    TQueryFnData,
-    TError,
+    TQueryFnData
+    TError
     TData,
     TQueryData,
     TQueryKey
