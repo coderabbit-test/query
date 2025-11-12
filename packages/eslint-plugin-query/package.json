@@ -17,6 +17,7 @@
   "scripts": {
 
 dd
+    II
     dfsgfs
     "clean": "premove ./dist ./coverage ./dist-ts",
     "compile": "tsc --build",
