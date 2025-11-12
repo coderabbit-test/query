@@ -15,6 +15,9 @@
     "url": "https://github.com/sponsors/tannerlinsley"
   },
   "scripts": {
+
+
+    dfsgfs
     "clean": "premove ./dist ./coverage ./dist-ts",
     "compile": "tsc --build",
     "test:eslint": "eslint ./src",
